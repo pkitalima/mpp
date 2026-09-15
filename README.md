@@ -1,19 +1,79 @@
 # MPP
 
-Internal team productivity PWA for a single team (3–20 people). Makes stalled work visible
-through a **Stagnation Radar**, lowers the cost of starting daunting tasks with a **Micro-Task
-Catalyst**, and protects focused time with **Deep Work blocks** — all on a real-time Kanban board.
+Internal team productivity PWA for a single team (3–20 people). A real-time Kanban board with
+three mechanics layered on it:
 
-- **[Product Requirements Document](docs/PRD.md)** — problem, features, decisions, data model,
-  stack rationale, open questions.
+- **Stagnation Radar** — flags cards that have stopped moving, against per-column thresholds the
+  team lead configures. Weekends and PTO don't age a card.
+- **Micro-Task Catalyst** — breaks a daunting card into sub-5-minute steps, each startable with a
+  120-second commitment. Stopping at 120 seconds is a kept promise, not a failure.
+- **Deep Work blocks** — personal or team-wide focus windows that hold non-urgent notifications and
+  release them as one digest.
 
-## Status
+Full product rationale: **[docs/PRD.md](docs/PRD.md)**.
 
-Pre-development. The PRD is at draft v0.2 with the stagnation model, stack, and scope decided.
-One decision is open and blocks development of the Focus Block feature specifically: whether Deep
-Work suppresses Slack/Teams pings or is an in-app status only (see PRD §9, OD-1).
+## Quick start
 
-## Intended stack
+```bash
+npm install
+npm run dev
+```
 
-React + Tailwind (Vite PWA) · Supabase (Postgres + Auth + Realtime) · Web Push via FCM · Vercel ·
-Workbox/IndexedDB for offline. Rationale in PRD §7.
+That's it — no backend needed. With no Supabase credentials configured the app runs against
+IndexedDB and seeds an eight-person marketing team mid-week, including the two stalled cards from
+the PRD walkthrough. The header's person switcher stands in for signing in as a teammate; it is
+also the fastest way to see what each flag-visibility level actually hides.
+
+| Command | What it does |
+|---------|--------------|
+| `npm run dev` | Dev server |
+| `npm run build` | Typecheck, then production build with service worker |
+| `npm test` | Domain unit tests (57) |
+| `npm run typecheck` | Types only |
+| `npm run smoke` | End-to-end browser walkthrough against a running `npm run preview` |
+
+## Running against Supabase
+
+```bash
+cp .env.example .env.local     # fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql
+```
+
+The same app then talks to Postgres with realtime subscriptions instead of IndexedDB — the storage
+adapter is chosen at startup in `src/data/index.ts` and nothing above it changes.
+
+The migration is not just tables. Row Level Security carries the flag-visibility rules at the
+database level, because "Owner only" enforced by a hidden div is not a privacy setting, and
+`pulse_flag_counts()` is `security definer` so a lead still gets aggregate counts at a visibility
+level that hides the underlying rows.
+
+## Architecture
+
+```
+src/
+  domain/     Pure, tested, no React and no I/O — the radar, thresholds,
+              visibility rules, Pulse metrics, day counting
+  data/       Repository seam: IndexedDB adapter, Supabase adapter, shared schema
+  state/      React store: loads a snapshot, ticks the clock, runs the flag
+              reconciler, exposes actions
+  ui/         Board, Pulse, Settings, card drawer, Catalyst
+supabase/     Postgres schema + RLS
+```
+
+Three things are worth knowing before changing it:
+
+1. **The radar is a function of time**, so the store ticks a clock and re-evaluates; flag
+   *records* are written by a reconciler that compares current levels against open flags.
+2. **Each flag stores the thresholds in force when it was raised.** Retuning changes what is
+   flagged now without rewriting the trend the lead tuned against.
+3. **`resets_clock` lives on the event row**, not in branching at call sites. Opening a card,
+   renaming it, or being assigned it are attention, not progress — they must never reset the clock,
+   and the card timeline marks which events counted.
+
+## Not built yet
+
+- **Web Push.** The PWA installs and works offline, and in-app notifications plus the Focus Block
+  digest work today, but the FCM sender and push-subscription storage need a deployed backend.
+- **Auth.** Supabase Auth is the plan; the local build has the person switcher instead.
+- **Slack/Teams suppression during Deep Work.** v1 is in-app only, which is the open decision OD-1
+  in the PRD, resolved as option A. The upgrade is additive rather than a rewrite.

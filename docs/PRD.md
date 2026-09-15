@@ -1,7 +1,7 @@
 # MPP — Product Requirements Document
 
 **Working title:** MPP (Momentum Project Platform)
-**Status:** Draft v0.2 — decisions locked for stagnation model, stack, and scope
+**Status:** v0.3 — decisions locked; v1 of the app is built against this document (see §11)
 **Scope:** Single-team internal deployment (3–20 people). Not a commercial multi-tenant product.
 **Last updated:** 2026-09-15
 
@@ -65,6 +65,12 @@ person holding a daunting task a way to start it that costs them almost nothing.
   possible action in the UI: one click, one sentence, no meeting. A blocked card with a reason is a
   *success* state for the system, not a failure — it means the stall was declared before the radar
   had to find it.
+- **Blocked is a tag, not only a column.** A card can be tagged Blocked while sitting in In
+  Progress — which is what the §6 walkthrough describes — or moved to the Blocked column when the
+  work is parked entirely. Either way the tag applies the **Blocked thresholds** (§5.2) wherever
+  the card sits, so declaring a stall never buys a looser clock than staying quiet. That tighter
+  clock is the point of declaring it: a blocked card is waiting on someone, and waiting is the
+  thing worth catching fast.
 
 ### 5.2 Stagnation Radar
 
@@ -300,3 +306,32 @@ An anti-signal worth watching explicitly: **cards created already in "In Progres
 cosmetic edits on stale cards. Either means people are gaming the clock, which means the radar is
 being read as judgement rather than as help — and the fix is in §5.4 and the thresholds, not in
 tightening detection.
+
+
+## 11. Implementation status
+
+v1 is built in this repository against this document. What landed, and where it differs:
+
+| Section | Status | Notes |
+|---------|--------|-------|
+| §5.1 Kanban board | Built | Drag-and-drop, live cross-client sync, Blocked as a tag (see the clarification above) |
+| §5.2 Stagnation Radar | Built | `src/domain/stagnation.ts`; weekend and PTO rules, fractional day counting, flag records with threshold snapshots |
+| §5.3 Micro-Task Catalyst | Built | 120-second commitment with both outcomes presented as wins |
+| §5.4 Flag visibility | Built | All three levels, enforced in the UI and in Postgres RLS; change announced in-app |
+| §5.5 Deep Work | Built, **in-app only** | OD-1 resolved as option A for v1. `PresenceSink`-shaped seam lives in the repository's data layer; Slack sync is additive |
+| §5.6 Team Pulse | Built | Every metric in the section, plus the §10 anti-signal |
+| §5.7 PWA | Partly built | Installable, offline board, service worker precache. **Web Push is not wired** — the FCM sender and subscription storage need a backend deployment; in-app notifications and the Focus Block digest work today |
+| §7 Stack | Built | React + Tailwind + Vite PWA; Supabase adapter plus an IndexedDB adapter so the app runs with no backend |
+| Auth | Not built | Supabase Auth is the plan (§7.1); the local build has a viewer switcher instead, which is also the fastest way to see what each visibility level hides |
+
+Decisions taken during the build that this document did not cover:
+
+1. **Blocked-as-tag carries Blocked thresholds** — recorded in §5.1 above.
+2. **Day boundaries are a team setting** (`tz_offset_minutes`). The radar counts days, so it needs
+   to know where a day ends; leaving that to the runtime's timezone would make the same card age
+   differently for a teammate in another timezone.
+3. **Viewing a card is recorded but rate-limited** to one row per person per hour. Views never move
+   the clock, and one row per glance would bury the timeline people use to check *why* a card is
+   flagged.
+4. **The red-flag count in the header is scoped to what the viewer may see.** At "Owner only" even a
+   count is attribution a teammate should not have.
