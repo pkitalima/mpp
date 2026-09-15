@@ -28,6 +28,32 @@ try {
   await page.waitForTimeout(1_000);
   await page.screenshot({ path: `${shots}/01-pulse.png`, fullPage: true });
 
+  // A count on a dashboard invites "which ones?" — the bars answer it.
+  await page.getByRole('button', { name: /List the cards completed: This week/ }).click();
+  await page.waitForSelector('text=Completed this week', { timeout: 5_000 });
+  const listed = await page.locator('section:has-text("Completed this week") li').count();
+  const barValue = Number(
+    (await page.getByRole('button', { name: /List the cards completed: This week/ }).innerText())
+      .trim()
+      .split('\n')[0],
+  );
+  if (listed !== barValue) {
+    throw new Error(`Drill-down lists ${listed} cards but the bar reads ${barValue}`);
+  }
+  await page.screenshot({ path: `${shots}/07-drill-completions.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Close' }).first().click();
+
+  // A Focus Block must be live the moment it starts, not at the next clock tick.
+  await page.getByRole('button', { name: 'Start Focus Block' }).click();
+  await page.getByLabel(/Custom block length in minutes, just me/).fill('7');
+  await page.getByRole('button', { name: /Start a custom block, just me/ }).click();
+  await page.waitForSelector('button:text-is("End early")', { timeout: 5_000 });
+  const clock = (await page.locator('.font-mono').first().innerText()).trim();
+  if (!/^[67]:\d\d$/.test(clock)) throw new Error(`Custom block shows ${clock}, expected ~7:00`);
+  await page.screenshot({ path: `${shots}/09-custom-focus.png`, clip: { x: 0, y: 0, width: 1360, height: 220 } });
+  await page.getByRole('button', { name: 'End early' }).click();
+  await page.waitForTimeout(300);
+
   await page.getByRole('button', { name: 'Board', exact: true }).click();
   await page.waitForTimeout(500);
   await page.screenshot({ path: `${shots}/02-board.png` });

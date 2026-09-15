@@ -1,12 +1,27 @@
 import { useState } from 'react';
 import { useStore } from '../../state/store';
-import { blockEndsAt, currentBlockFor, FOCUS_PRESETS } from '../../domain/focus';
+import {
+  blockEndsAt,
+  clampFocusMinutes,
+  currentBlockFor,
+  FOCUS_PRESETS,
+  MAX_FOCUS_MINUTES,
+  MIN_FOCUS_MINUTES,
+} from '../../domain/focus';
 import { formatClock } from '../../domain/time';
 
 export function FocusLauncher() {
   const { viewer, actions } = useStore();
   const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState('');
+  const customMinutes = clampFocusMinutes(Number(custom));
   if (!viewer) return null;
+
+  function start(scope: 'personal' | 'team', minutes: number) {
+    void actions.startFocusBlock(scope, minutes);
+    setOpen(false);
+    setCustom('');
+  }
 
   return (
     <div className="relative">
@@ -30,18 +45,49 @@ export function FocusLauncher() {
                 {FOCUS_PRESETS.map((minutes) => (
                   <button
                     key={minutes}
-                    onClick={() => {
-                      void actions.startFocusBlock(scope, minutes);
-                      setOpen(false);
-                    }}
+                    onClick={() => start(scope, minutes)}
                     className="flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm hover:border-slate-400 hover:bg-slate-50"
                   >
                     {minutes}m
                   </button>
                 ))}
+                {/* Presets cover the common cases; the custom field is for the block that has to
+                    end when something else starts. */}
+                <form
+                  className="flex flex-1 gap-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (customMinutes !== null) start(scope, customMinutes);
+                  }}
+                >
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={MIN_FOCUS_MINUTES}
+                    max={MAX_FOCUS_MINUTES}
+                    value={custom}
+                    onChange={(e) => setCustom(e.target.value)}
+                    placeholder="custom"
+                    aria-label={`Custom block length in minutes, ${scope === 'team' ? 'whole team' : 'just me'}`}
+                    className="w-16 rounded-lg border border-slate-300 px-1.5 py-1.5 text-sm outline-none focus:border-slate-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={customMinutes === null}
+                    aria-label={`Start a custom block, ${scope === 'team' ? 'whole team' : 'just me'}`}
+                    className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm hover:border-slate-400 hover:bg-slate-50 disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-transparent"
+                  >
+                    Go
+                  </button>
+                </form>
               </div>
             </div>
           ))}
+          {custom !== '' && customMinutes === null && (
+            <p className="mt-1 text-xs text-rose-700">
+              Pick between {MIN_FOCUS_MINUTES} and {MAX_FOCUS_MINUTES} minutes.
+            </p>
+          )}
           {viewer.role !== 'lead' && (
             <p className="mt-1 text-xs text-slate-400">
               Anyone can start a team block — it is a signal, not a command.

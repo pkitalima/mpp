@@ -31,21 +31,40 @@ export function weekBuckets(now: number = Date.now(), weeks = 4): WeekBucket[] {
   return buckets;
 }
 
+/** Buckets are half-open [start, end) so an instant lands in exactly one week. */
+export function inBucket(iso: string | null, bucket: WeekBucket): boolean {
+  if (!iso) return false;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && ms >= bucket.start && ms < bucket.end;
+}
+
 function bucketCounts(timestamps: (string | null)[], buckets: WeekBucket[]): number[] {
   const counts = buckets.map(() => 0);
   for (const iso of timestamps) {
-    if (!iso) continue;
-    const ms = Date.parse(iso);
-    if (!Number.isFinite(ms)) continue;
     for (let i = 0; i < buckets.length; i += 1) {
-      const b = buckets[i]!;
-      if (ms >= b.start && ms < b.end) {
+      if (inBucket(iso, buckets[i]!)) {
         counts[i] = (counts[i] ?? 0) + 1;
         break;
       }
     }
   }
   return counts;
+}
+
+/**
+ * The rows behind a bar. A count on a dashboard invites the question "which ones?", and the
+ * answer should be one click away rather than a re-derivation by hand.
+ */
+export function cardsCompletedIn(cards: Card[], bucket: WeekBucket): Card[] {
+  return cards
+    .filter((card) => inBucket(card.completedAt, bucket))
+    .sort((a, b) => Date.parse(b.completedAt ?? '') - Date.parse(a.completedAt ?? ''));
+}
+
+export function flagsRaisedIn(flags: StagnationFlag[], bucket: WeekBucket): StagnationFlag[] {
+  return flags
+    .filter((flag) => inBucket(flag.raisedAt, bucket))
+    .sort((a, b) => Date.parse(b.raisedAt) - Date.parse(a.raisedAt));
 }
 
 export function completionsPerWeek(cards: Card[], buckets: WeekBucket[]): number[] {

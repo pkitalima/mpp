@@ -3,13 +3,18 @@ import { useStore } from '../../state/store';
 import { isOverridden, SYSTEM_DEFAULT_THRESHOLDS } from '../../domain/thresholds';
 import { VISIBILITY_LEVELS } from '../../domain/visibility';
 import { formatRelative } from '../../domain/time';
-import { EVALUATED_COLUMNS, type EvaluatedColumn, type FlagVisibility, type TeamSettings } from '../../domain/types';
+import {
+  columnLabel,
+  EVALUATED_COLUMNS,
+  type EvaluatedColumn,
+  type FlagVisibility,
+  type TeamSettings,
+} from '../../domain/types';
 
-const COLUMN_LABEL: Record<EvaluatedColumn, string> = {
-  todo: 'To Do',
-  in_progress: 'In Progress',
-  blocked: 'Blocked (column or tag)',
-};
+/** Blocked earns a longer label here, because the setting covers the tag as well as the column. */
+function thresholdLabel(column: EvaluatedColumn): string {
+  return column === 'blocked' ? 'Blocked (column or tag)' : columnLabel(column);
+}
 
 export function SettingsView() {
   const { viewer, rawSettings, settings, actions, backend, now, snapshot } = useStore();
@@ -29,7 +34,7 @@ export function SettingsView() {
         return setError('Thresholds must be at least a fraction of a day.');
       }
       if (value.amberDays >= value.redDays) {
-        return setError(`${COLUMN_LABEL[column]}: amber has to come before red.`);
+        return setError(`${thresholdLabel(column)}: amber has to come before red.`);
       }
     }
     setError(null);
@@ -57,7 +62,7 @@ export function SettingsView() {
         <div className="space-y-3">
           {EVALUATED_COLUMNS.map((column) => (
             <div key={column} className="flex flex-wrap items-center gap-3">
-              <span className="w-44 text-sm font-medium text-slate-700">{COLUMN_LABEL[column]}</span>
+              <span className="w-44 text-sm font-medium text-slate-700">{thresholdLabel(column)}</span>
               {(['amberDays', 'redDays'] as const).map((field) => (
                 <label key={field} className="flex items-center gap-1.5 text-sm text-slate-600">
                   <span className={field === 'amberDays' ? 'text-amber-700' : 'text-rose-700'}>

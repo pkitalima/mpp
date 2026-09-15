@@ -18,6 +18,11 @@ export function isEvaluated(column: ColumnId): column is EvaluatedColumn {
   return (EVALUATED_COLUMNS as readonly string[]).includes(column);
 }
 
+/** The name a person reads. Never derive this from the id — "todo" is not a word. */
+export function columnLabel(column: ColumnId): string {
+  return COLUMNS.find((c) => c.id === column)?.label ?? column;
+}
+
 export type FlagLevel = 'green' | 'amber' | 'red';
 export type Role = 'lead' | 'member';
 

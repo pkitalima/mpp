@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../state/store';
 import { visibleEvaluation } from '../../domain/visibility';
 import { formatDays, formatRelative } from '../../domain/time';
-import { COLUMNS, type ActivityEvent, type Card } from '../../domain/types';
+import { COLUMNS, columnLabel, type ActivityEvent, type Card } from '../../domain/types';
 import { FlagChip } from './Flag';
 import { CatalystModal } from './CatalystModal';
 
@@ -98,7 +98,7 @@ export function CardDrawer({ cardId, onClose }: { cardId: string; onClose: () =>
               {/* The copy describes the card, never the person holding it. */}
               <p className="text-sm text-slate-700">
                 This card has not moved in <strong>{formatDays(evaluation.activeDays)}</strong>.{' '}
-                {evaluation.column.replace('_', ' ')} turns {evaluation.level} at{' '}
+                {columnLabel(evaluation.column)} turns {evaluation.level} at{' '}
                 {evaluation.level === 'red' ? evaluation.threshold.redDays : evaluation.threshold.amberDays} days.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">

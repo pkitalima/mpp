@@ -142,7 +142,8 @@ erodes trust in the tool.
 ### 5.5 Deep Work / Focus Blocks
 
 - Any member can start a personal Focus Block; a lead can start a **team-wide** one.
-- Duration presets (25 / 30 / 50 / 90 min) plus custom.
+- Duration presets (25 / 30 / 50 / 90 min) plus a custom length, 1–480 minutes — the preset covers
+  the common case, the custom field covers the block that has to end when something else starts.
 - Participants' presence status flips to **Deep Work** with the block's end time shown.
 - In-app effects during a block: non-urgent in-app notifications are queued rather than delivered,
   and are released as a single digest when the block ends. Mentions marked urgent still break through.
@@ -164,6 +165,10 @@ Amina's landing view.
   tells Amina whether her thresholds are calibrated, and it is the one she should look at before
   changing them.
 - Active Focus Blocks and who is in Deep Work right now.
+- **Every bar is a control.** Clicking a week in either chart lists the cards or flags behind it, so
+  "why was last week worse?" is one click rather than a re-derivation by hand. The flag list obeys
+  the §5.4 visibility setting exactly as the board does — a count is not attribution, so the chart
+  keeps its number while the list says what it cannot show.
 
 ### 5.7 PWA behaviour
 
@@ -341,3 +346,6 @@ Decisions taken during the build that this document did not cover:
 6. **A failed load says what failed.** An empty result from a backend the app could not read looks
    exactly like a board with nothing on it, so the app now distinguishes signed-out, error, and
    empty rather than waiting on a spinner.
+7. **The clock advances with the data, not only on its own tick.** The radar is a function of time,
+   so the store keeps a ticking `now`; anything starting "now" — a Focus Block above all — was
+   evaluated against a clock up to a tick old and read as not yet begun.

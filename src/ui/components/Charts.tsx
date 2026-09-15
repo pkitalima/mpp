@@ -20,30 +20,52 @@ export function ColumnChart({
   color,
   caption,
   formatValue = (v: number) => String(v),
+  onSelect,
+  selectedIndex = null,
+  selectLabel = 'Show',
 }: {
   data: Point[];
   color: string;
   caption?: string;
   formatValue?: (value: number) => string;
+  /** Makes each bar a control that opens the rows behind it. */
+  onSelect?: (index: number) => void;
+  selectedIndex?: number | null;
+  selectLabel?: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...data.map((d) => d.value));
+  const interactive = Boolean(onSelect);
 
   return (
     <figure className="m-0">
       <div className="relative flex h-32 items-end gap-2" style={{ borderBottom: `1px solid ${GRIDLINE}` }}>
         {data.map((point, index) => {
           const height = (point.value / max) * 100;
+          const selected = selectedIndex === index;
+          // The whole column is the hit target, not just the bar — a one-card week is a sliver.
+          const Tag = interactive ? 'button' : 'div';
           return (
-            <div
+            <Tag
               key={point.label}
-              className="relative flex h-full flex-1 flex-col items-center justify-end"
+              type={interactive ? 'button' : undefined}
+              onClick={interactive ? () => onSelect?.(index) : undefined}
+              aria-pressed={interactive ? selected : undefined}
+              aria-label={
+                interactive ? `${selectLabel}: ${point.label}, ${formatValue(point.value)}` : undefined
+              }
+              className={`relative flex h-full flex-1 flex-col items-center justify-end rounded-t-lg border-0 bg-transparent p-0 ${
+                interactive ? 'cursor-pointer focus-visible:outline-2 focus-visible:outline-slate-900' : ''
+              }`}
               onMouseEnter={() => setHover(index)}
               onMouseLeave={() => setHover(null)}
             >
               {/* Direct label on every bar: four bars is few enough that the numbers are the
                   point, and it keeps the value off the colour alone. */}
-              <span className="mb-1 text-xs font-medium tabular-nums" style={{ color: INK_MUTED }}>
+              <span
+                className="mb-1 text-xs font-medium tabular-nums"
+                style={{ color: selected ? '#0b0b0b' : INK_MUTED }}
+              >
                 {formatValue(point.value)}
               </span>
               <div
@@ -55,21 +77,31 @@ export function ColumnChart({
                   maxHeight: 'calc(100% - 1.25rem)',
                   background: point.value > 0 ? color : GRIDLINE,
                   borderRadius: '4px 4px 0 0',
-                  opacity: hover === null || hover === index ? 1 : 0.55,
+                  // Selection is carried by opacity and an underline below, not by hue: the bar
+                  // must not change what colour it encodes when you click it.
+                  opacity: selectedIndex !== null && !selected ? 0.4 : hover === null || hover === index ? 1 : 0.55,
+                  boxShadow: selected ? `inset 0 0 0 2px #0f172a` : undefined,
                 }}
               />
               {hover === index && (
                 <div className="pointer-events-none absolute -top-8 z-10 whitespace-nowrap rounded-lg bg-slate-900 px-2 py-1 text-xs text-white shadow">
                   {point.label}: {formatValue(point.value)}
+                  {interactive && point.value > 0 && <span className="text-slate-300"> · click to list</span>}
                 </div>
               )}
-            </div>
+            </Tag>
           );
         })}
       </div>
       <div className="mt-1.5 flex gap-2">
-        {data.map((point) => (
-          <span key={point.label} className="flex-1 text-center text-[11px]" style={{ color: INK_MUTED }}>
+        {data.map((point, index) => (
+          <span
+            key={point.label}
+            className={`flex-1 text-center text-[11px] ${
+              selectedIndex === index ? 'font-semibold underline underline-offset-2' : ''
+            }`}
+            style={{ color: selectedIndex === index ? '#0b0b0b' : INK_MUTED }}
+          >
             {point.label}
           </span>
         ))}

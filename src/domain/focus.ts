@@ -2,6 +2,17 @@ import type { FocusBlock, QueuedNotification, User } from './types';
 
 export const FOCUS_PRESETS = [25, 30, 50, 90] as const;
 
+/** A block shorter than a minute is a mistake; longer than a working day is not a focus block. */
+export const MIN_FOCUS_MINUTES = 1;
+export const MAX_FOCUS_MINUTES = 480;
+
+export function clampFocusMinutes(minutes: number): number | null {
+  if (!Number.isFinite(minutes)) return null;
+  const rounded = Math.round(minutes);
+  if (rounded < MIN_FOCUS_MINUTES || rounded > MAX_FOCUS_MINUTES) return null;
+  return rounded;
+}
+
 export function blockEndsAt(block: FocusBlock): number {
   return Math.min(
     Date.parse(block.endsAt),

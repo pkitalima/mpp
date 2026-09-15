@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useStore } from '../../state/store';
 import {
   averageDaysInColumn,
+  cardsCompletedIn,
+  flagsRaisedIn,
   cardsCreatedInProgress,
   catalystContinuationRate,
   completionsPerWeek,
@@ -12,7 +14,9 @@ import {
   weekBuckets,
 } from '../../domain/metrics';
 import { canSeeAggregates, canSeeFlag } from '../../domain/visibility';
-import { formatDays } from '../../domain/time';
+import { columnLabel } from '../../domain/types';
+import type { WeekBucket } from '../../domain/metrics';
+import { formatDays, formatRelative } from '../../domain/time';
 import { activeBlocks } from '../../domain/focus';
 import { ColumnChart, Meter, SERIES_BLUE, SERIES_ORANGE, StatTile } from '../components/Charts';
 import { FlagChip } from '../components/Flag';
@@ -21,6 +25,8 @@ export function PulseView({ onOpenCard }: { onOpenCard: (cardId: string) => void
   const { snapshot, viewer, settings, evaluations, now } = useStore();
   const nowIso = useMemo(() => new Date(now).toISOString(), [now]);
   const buckets = useMemo(() => weekBuckets(now, 4), [now]);
+  // Which bar, in which chart, is opened. Clicking the same bar again closes it.
+  const [drill, setDrill] = useState<{ chart: 'completions' | 'flags'; index: number } | null>(null);
 
   const stats = useMemo(() => {
     return {
@@ -85,7 +91,19 @@ export function PulseView({ onOpenCard }: { onOpenCard: (cardId: string) => void
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="mb-1 text-sm font-semibold text-slate-800">Cards completed per week</h2>
           <p className="mb-3 text-xs text-slate-500">Trailing four weeks.</p>
-          <ColumnChart data={toPoints(stats.completions, buckets)} color={SERIES_BLUE} />
+          <ColumnChart
+            data={toPoints(stats.completions, buckets)}
+            color={SERIES_BLUE}
+            selectLabel="List the cards completed"
+            selectedIndex={drill?.chart === 'completions' ? drill.index : null}
+            onSelect={(index) =>
+              setDrill((current) =>
+                current?.chart === 'completions' && current.index === index
+                  ? null
+                  : { chart: 'completions', index },
+              )
+            }
+          />
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -97,9 +115,28 @@ export function PulseView({ onOpenCard }: { onOpenCard: (cardId: string) => void
                 ? 'Fewer than last week.'
                 : 'Level with last week.'}
           </p>
-          <ColumnChart data={toPoints(stats.flags, buckets)} color={SERIES_ORANGE} />
+          <ColumnChart
+            data={toPoints(stats.flags, buckets)}
+            color={SERIES_ORANGE}
+            selectLabel="List the flags raised"
+            selectedIndex={drill?.chart === 'flags' ? drill.index : null}
+            onSelect={(index) =>
+              setDrill((current) =>
+                current?.chart === 'flags' && current.index === index ? null : { chart: 'flags', index },
+              )
+            }
+          />
         </div>
       </section>
+
+      {drill && buckets[drill.index] && (
+        <BarDetail
+          chart={drill.chart}
+          bucket={buckets[drill.index]!}
+          onClose={() => setDrill(null)}
+          onOpenCard={onOpenCard}
+        />
+      )}
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-800">Average time in column</h2>
@@ -146,7 +183,7 @@ export function PulseView({ onOpenCard }: { onOpenCard: (cardId: string) => void
                       <span className="block truncate text-sm font-medium text-slate-800">{card.title}</span>
                       <span className="block truncate text-xs text-slate-500">
                         {owner?.displayName ?? 'Unassigned'} ·{' '}
-                        {card.blockedReason ? `blocked — ${card.blockedReason}` : evaluation.column.replace('_', ' ')}
+                        {card.blockedReason ? `blocked — ${card.blockedReason}` : columnLabel(evaluation.column)}
                       </span>
                     </span>
                     {card.blockedReason && (
@@ -203,4 +240,125 @@ export function PulseView({ onOpenCard }: { onOpenCard: (cardId: string) => void
 
 function toPoints(values: number[], buckets: { label: string }[]) {
   return buckets.map((bucket, index) => ({ label: bucket.label, value: values[index] ?? 0 }));
+}
+
+/**
+ * The rows behind a bar. A flag list is attribution, not just a count, so it obeys the team's
+ * visibility setting exactly as the board does — a lead on "Owner only" gets the number from the
+ * chart and is told what the list cannot show them.
+ */
+function BarDetail({
+  chart,
+  bucket,
+  onClose,
+  onOpenCard,
+}: {
+  chart: 'completions' | 'flags';
+  bucket: WeekBucket;
+  onClose: () => void;
+  onOpenCard: (cardId: string) => void;
+}) {
+  const { snapshot, viewer, settings, now } = useStore();
+  if (!viewer) return null;
+
+  const cardsById = new Map(snapshot.cards.map((card) => [card.id, card]));
+  const completed = chart === 'completions' ? cardsCompletedIn(snapshot.cards, bucket) : [];
+  const raised = chart === 'flags' ? flagsRaisedIn(snapshot.flags, bucket) : [];
+  const visibleFlags = raised.filter((flag) => {
+    const card = cardsById.get(flag.cardId);
+    return card ? canSeeFlag(viewer, card, settings.flagVisibility) : false;
+  });
+  const hidden = raised.length - visibleFlags.length;
+
+  const total = chart === 'completions' ? completed.length : raised.length;
+  const heading =
+    chart === 'completions'
+      ? `Completed ${bucket.label.toLowerCase()}`
+      : `Flags raised ${bucket.label.toLowerCase()}`;
+
+  return (
+    <section className="rounded-xl border border-slate-300 bg-white">
+      <header className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+        <h2 className="text-sm font-semibold text-slate-800">
+          {heading}
+          <span className="ml-2 font-normal text-slate-500">
+            {total} {total === 1 ? 'card' : chart === 'completions' ? 'cards' : 'flags'}
+          </span>
+        </h2>
+        <button onClick={onClose} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100">
+          Close
+        </button>
+      </header>
+
+      {total === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-slate-500">
+          {chart === 'completions' ? 'Nothing was finished that week.' : 'Nothing was flagged that week.'}
+        </p>
+      )}
+
+      <ul className="divide-y divide-slate-100">
+        {chart === 'completions' &&
+          completed.map((card) => {
+            const owner = snapshot.users.find((u) => u.id === card.assigneeId);
+            return (
+              <li key={card.id}>
+                <button
+                  onClick={() => onOpenCard(card.id)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50"
+                >
+                  <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{card.title}</span>
+                  <span className="shrink-0 text-xs text-slate-500">{owner?.displayName ?? 'Unassigned'}</span>
+                  <span className="shrink-0 text-xs text-slate-400">
+                    {card.completedAt ? formatRelative(card.completedAt, now) : ''}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+
+        {chart === 'flags' &&
+          visibleFlags.map((flag) => {
+            const card = cardsById.get(flag.cardId);
+            const owner = snapshot.users.find((u) => u.id === card?.assigneeId);
+            return (
+              <li key={flag.id}>
+                <button
+                  onClick={() => card && onOpenCard(card.id)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50"
+                >
+                  <span
+                    className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                      flag.level === 'red' ? 'bg-rose-500' : 'bg-amber-500'
+                    }`}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-800">
+                    {card?.title ?? 'Card since deleted'}
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-500">
+                    {flag.level === 'red' ? 'Stalled' : 'Slowing'} in {columnLabel(flag.thresholdSnapshot.column)}
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-400">
+                    {owner?.displayName ?? 'Unassigned'} · {formatRelative(flag.raisedAt, now)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+      </ul>
+
+      {chart === 'flags' && hidden > 0 && (
+        <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+          {hidden} more {hidden === 1 ? 'flag is' : 'flags are'} counted in the chart but private to
+          {' '}their owners at this visibility level.
+        </p>
+      )}
+
+      {chart === 'flags' && total > 0 && (
+        <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-400">
+          Each flag shows the threshold that was in force when it was raised, not today's.
+        </p>
+      )}
+    </section>
+  );
 }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   averageDaysInColumn,
+  cardsCompletedIn,
+  flagsRaisedIn,
   cardsCreatedInProgress,
   catalystContinuationRate,
   completionsPerWeek,
@@ -53,6 +55,44 @@ describe('completionsPerWeek', () => {
       card({ id: 'd', completedAt: null }),
     ];
     expect(completionsPerWeek(cards, buckets)).toEqual([1, 2]);
+  });
+});
+
+describe('drilling into a bar', () => {
+  const buckets = weekBuckets(NOW, 2);
+  const thisWeek = buckets[1]!;
+  const lastWeek = buckets[0]!;
+
+  it('returns the cards behind a completions bar, newest first', () => {
+    const cards = [
+      card({ id: 'a', completedAt: '2026-09-11T09:00:00Z' }),
+      card({ id: 'b', completedAt: '2026-09-14T09:00:00Z' }),
+      card({ id: 'old', completedAt: '2026-09-05T09:00:00Z' }),
+      card({ id: 'open', completedAt: null }),
+    ];
+    expect(cardsCompletedIn(cards, thisWeek).map((c) => c.id)).toEqual(['b', 'a']);
+    expect(cardsCompletedIn(cards, lastWeek).map((c) => c.id)).toEqual(['old']);
+  });
+
+  it('returns the flags behind a flags bar', () => {
+    const flag = (id: string, raisedAt: string): StagnationFlag => ({
+      id,
+      cardId: 'c',
+      level: 'red',
+      raisedAt,
+      clearedAt: null,
+      thresholdSnapshot: { column: 'in_progress', amberDays: 2, redDays: 4 },
+    });
+    const flags = [flag('f1', '2026-09-14T09:00:00Z'), flag('f2', '2026-09-04T09:00:00Z')];
+    expect(flagsRaisedIn(flags, thisWeek).map((f) => f.id)).toEqual(['f1']);
+    expect(flagsRaisedIn(flags, lastWeek).map((f) => f.id)).toEqual(['f2']);
+  });
+
+  it('puts an instant on a bucket boundary in exactly one week', () => {
+    const onBoundary = new Date(thisWeek.start).toISOString();
+    const cards = [card({ id: 'edge', completedAt: onBoundary })];
+    expect(cardsCompletedIn(cards, thisWeek)).toHaveLength(1);
+    expect(cardsCompletedIn(cards, lastWeek)).toHaveLength(0);
   });
 });
 

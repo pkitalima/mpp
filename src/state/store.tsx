@@ -104,7 +104,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const reload = useCallback(async () => {
     try {
-      setSnapshot(await repo.load());
+      const loaded = await repo.load();
+      setSnapshot(loaded);
+      // Advance the clock with the data. Anything time-derived — a Focus Block that starts
+      // "now", a card's age — is otherwise evaluated against a `now` up to a tick old, so a
+      // block you just started reads as not yet begun and its bar does not appear.
+      setNow(Date.now());
     } catch (cause) {
       // Failing loudly matters more here than failing gracefully: a silent empty board looks
       // exactly like a working board with nothing on it.
