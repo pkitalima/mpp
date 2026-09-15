@@ -317,12 +317,12 @@ v1 is built in this repository against this document. What landed, and where it 
 | §5.1 Kanban board | Built | Drag-and-drop, live cross-client sync, Blocked as a tag (see the clarification above) |
 | §5.2 Stagnation Radar | Built | `src/domain/stagnation.ts`; weekend and PTO rules, fractional day counting, flag records with threshold snapshots |
 | §5.3 Micro-Task Catalyst | Built | 120-second commitment with both outcomes presented as wins |
-| §5.4 Flag visibility | Built | All three levels, enforced in the UI and in Postgres RLS; change announced in-app |
+| §5.4 Flag visibility | Built | All three levels, enforced in the UI and in Postgres RLS (19 policy assertions in `supabase/test/`); change announced in-app |
 | §5.5 Deep Work | Built, **in-app only** | OD-1 resolved as option A for v1. `PresenceSink`-shaped seam lives in the repository's data layer; Slack sync is additive |
 | §5.6 Team Pulse | Built | Every metric in the section, plus the §10 anti-signal |
 | §5.7 PWA | Partly built | Installable, offline board, service worker precache. **Web Push is not wired** — the FCM sender and subscription storage need a backend deployment; in-app notifications and the Focus Block digest work today |
 | §7 Stack | Built | React + Tailwind + Vite PWA; Supabase adapter plus an IndexedDB adapter so the app runs with no backend |
-| Auth | Not built | Supabase Auth is the plan (§7.1); the local build has a viewer switcher instead, which is also the fastest way to see what each visibility level hides |
+| Auth | Built | Supabase Auth magic link, with a bootstrap trigger that makes the first person to sign in the lead. The local build keeps a person switcher, which is the fastest way to see what each visibility level hides |
 
 Decisions taken during the build that this document did not cover:
 
@@ -335,3 +335,9 @@ Decisions taken during the build that this document did not cover:
    flagged.
 4. **The red-flag count in the header is scoped to what the viewer may see.** At "Owner only" even a
    count is attribution a teammate should not have.
+5. **The first person to sign in becomes the lead** (§9 OD-3 said lead-only; it did not say how the
+   first lead is established). For a single-team internal deployment that is the person who set the
+   deployment up.
+6. **A failed load says what failed.** An empty result from a backend the app could not read looks
+   exactly like a board with nothing on it, so the app now distinguishes signed-out, error, and
+   empty rather than waiting on a spinner.

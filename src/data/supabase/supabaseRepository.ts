@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { COLLECTIONS, emptySnapshot, type CollectionName, type Row, type Snapshot } from '../schema';
-import type { Repository } from '../repository';
+import type { AuthGateway, Repository } from '../repository';
 
 /** Collection -> Postgres table. Matches supabase/migrations/0001_init.sql. */
 const TABLES: Record<CollectionName, string> = {
@@ -40,9 +40,31 @@ export class SupabaseRepository implements Repository {
   private client: SupabaseClient;
   private listeners = new Set<() => void>();
   private channelStarted = false;
+  readonly auth: AuthGateway;
 
   constructor(url: string, anonKey: string) {
     this.client = createClient(url, anonKey);
+    const client = this.client;
+    this.auth = {
+      async currentUserId() {
+        const { data } = await client.auth.getSession();
+        return data.session?.user.id ?? null;
+      },
+      onChange(listener) {
+        const { data } = client.auth.onAuthStateChange(() => listener());
+        return () => data.subscription.unsubscribe();
+      },
+      async sendMagicLink(email) {
+        const { error } = await client.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: window.location.origin },
+        });
+        if (error) throw new Error(error.message);
+      },
+      async signOut() {
+        await client.auth.signOut();
+      },
+    };
   }
 
   async load(): Promise<Snapshot> {

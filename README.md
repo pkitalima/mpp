@@ -31,13 +31,20 @@ also the fastest way to see what each flag-visibility level actually hides.
 | `npm test` | Domain unit tests (57) |
 | `npm run typecheck` | Types only |
 | `npm run smoke` | End-to-end browser walkthrough against a running `npm run preview` |
+| `npm run db:test` | Applies the migration to a throwaway Postgres and runs the RLS policy tests |
 
-## Running against Supabase
+## Running against Supabase (multi-person)
 
-```bash
-cp .env.example .env.local     # fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
-psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql
-```
+1. Create a Supabase project.
+2. Run `supabase/migrations/0001_init.sql` in the SQL editor (or
+   `psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql`).
+3. `cp .env.example .env.local` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+4. `npm run dev`, then sign in with a magic link.
+
+**The first person to sign in becomes the team lead** and can set thresholds and flag visibility;
+everyone after that joins as a member. A bootstrap trigger on `auth.users` creates the member row,
+the team and its settings — membership is not self-service, so no RLS policy lets a person insert
+their own `users` row.
 
 The same app then talks to Postgres with realtime subscriptions instead of IndexedDB — the storage
 adapter is chosen at startup in `src/data/index.ts` and nothing above it changes.
@@ -45,7 +52,8 @@ adapter is chosen at startup in `src/data/index.ts` and nothing above it changes
 The migration is not just tables. Row Level Security carries the flag-visibility rules at the
 database level, because "Owner only" enforced by a hidden div is not a privacy setting, and
 `pulse_flag_counts()` is `security definer` so a lead still gets aggregate counts at a visibility
-level that hides the underlying rows.
+level that hides the underlying rows. `npm run db:test` proves it: 19 assertions covering each
+visibility level from each vantage point, who may change thresholds, and the bootstrap trigger.
 
 ## Architecture
 
@@ -74,6 +82,7 @@ Three things are worth knowing before changing it:
 
 - **Web Push.** The PWA installs and works offline, and in-app notifications plus the Focus Block
   digest work today, but the FCM sender and push-subscription storage need a deployed backend.
-- **Auth.** Supabase Auth is the plan; the local build has the person switcher instead.
 - **Slack/Teams suppression during Deep Work.** v1 is in-app only, which is the open decision OD-1
   in the PRD, resolved as option A. The upgrade is additive rather than a rewrite.
+- **Role management.** The first sign-in becomes the lead and the rest are members; changing that
+  afterwards is a SQL update, not a screen.

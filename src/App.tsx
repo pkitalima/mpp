@@ -6,6 +6,7 @@ import { SettingsView } from './ui/views/SettingsView';
 import { CardDrawer } from './ui/components/CardDrawer';
 import { FocusBar, FocusLauncher } from './ui/components/FocusBar';
 import { NotificationTray } from './ui/components/NotificationTray';
+import { ErrorScreen, SignIn } from './ui/components/Gate';
 import { canSeeFlag } from './domain/visibility';
 
 type View = 'pulse' | 'board' | 'settings';
@@ -17,11 +18,13 @@ const TABS: { id: View; label: string }[] = [
 ];
 
 export default function App() {
-  const { ready, viewer, users, actions, evaluations, settings, cards } = useStore();
+  const { status, viewer, users, actions, evaluations, settings, cards, backend } = useStore();
   const [view, setView] = useState<View>('pulse');
   const [openCardId, setOpenCardId] = useState<string | null>(null);
 
-  if (!ready || !viewer) {
+  if (status === 'signed_out') return <SignIn />;
+  if (status === 'error') return <ErrorScreen />;
+  if (status !== 'ready' || !viewer) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading board…</div>
     );
@@ -70,22 +73,40 @@ export default function App() {
           <FocusLauncher />
           <NotificationTray />
           {/* No auth in the local build: this switcher stands in for signing in as a teammate,
-              which is also the fastest way to see what each visibility level actually hides. */}
-          <select
-            value={viewer.id}
-            onChange={(e) => actions.setViewer(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700"
-            aria-label="Viewing as"
-          >
-            {users.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.displayName}
-                {user.role === 'lead' ? ' (lead)' : ''}
-              </option>
-            ))}
-          </select>
+              which is also the fastest way to see what each visibility level actually hides. On a
+              real backend you are who you signed in as. */}
+          {backend === 'local' ? (
+            <select
+              value={viewer.id}
+              onChange={(e) => actions.setViewer(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700"
+              aria-label="Viewing as"
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.displayName}
+                  {user.role === 'lead' ? ' (lead)' : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button
+              onClick={() => void actions.signOut()}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              title={viewer.email}
+            >
+              {viewer.displayName.split(' ')[0]} · Sign out
+            </button>
+          )}
         </div>
       </header>
+
+      {backend === 'local' && (
+        <p className="border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-xs text-amber-900">
+          Demo data — an example eight-person team, seeded fresh in this browser. Nothing here is
+          real work, and nothing leaves this device.
+        </p>
+      )}
 
       {settings.flagVisibility !== 'team' && (
         <p className="bg-slate-100 px-4 py-1.5 text-xs text-slate-600">

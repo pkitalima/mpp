@@ -23,8 +23,12 @@ import {
 
 const TICK_MS = 30_000;
 
+export type Status = 'loading' | 'signed_out' | 'ready' | 'error';
+
 export interface StoreValue {
   ready: boolean;
+  status: Status;
+  error: string | null;
   backend: 'local' | 'supabase';
   snapshot: Snapshot;
   now: number;
@@ -40,6 +44,9 @@ export interface StoreValue {
 
 export interface Actions {
   setViewer(userId: string): void;
+  sendMagicLink(email: string): Promise<void>;
+  signOut(): Promise<void>;
+  retry(): void;
   createCard(input: { title: string; column: ColumnId; assigneeId: string | null; description?: string }): Promise<void>;
   moveCard(cardId: string, column: ColumnId): Promise<void>;
   editCard(cardId: string, patch: Partial<Pick<Card, 'title' | 'description' | 'assigneeId' | 'dueDate'>>): Promise<void>;
@@ -61,46 +68,108 @@ export interface Actions {
 
 const StoreContext = createContext<StoreValue | null>(null);
 
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // A remembered viewer is a convenience; losing it is not worth breaking the app over.
+  }
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const repoRef = useRef<Repository | null>(null);
   repoRef.current ??= createRepository();
   const repo = repoRef.current;
 
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
-  const [ready, setReady] = useState(false);
-  const [viewerId, setViewerId] = useState<string>(() => localStorage.getItem('mpp:viewer') ?? DEMO_USER_ID);
+  const [status, setStatus] = useState<Status>('loading');
+  const [error, setError] = useState<string | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // localStorage throws outright in a private window or a frame with site data blocked, and this
+  // runs during render — an unguarded read here is a white screen, not a lost preference.
+  const [viewerId, setViewerId] = useState<string>(() => readStored('mpp:viewer') ?? DEMO_USER_ID);
   const [now, setNow] = useState(() => Date.now());
   const reconciling = useRef(false);
 
+  const ready = status === 'ready';
+
   const reload = useCallback(async () => {
-    setSnapshot(await repo.load());
+    try {
+      setSnapshot(await repo.load());
+    } catch (cause) {
+      // Failing loudly matters more here than failing gracefully: a silent empty board looks
+      // exactly like a working board with nothing on it.
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setStatus('error');
+    }
+  }, [repo]);
+
+  // Track the session on backends that have one. The local build has no auth gateway.
+  useEffect(() => {
+    if (!repo.auth) return;
+    const refresh = () => void repo.auth!.currentUserId().then(setAuthUserId);
+    refresh();
+    return repo.auth.onChange(refresh);
   }, [repo]);
 
   // Initial load, seeding the demo team on a first run against local storage.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      let loaded = await repo.load();
-      if (loaded.users.length === 0 && repo.kind === 'local') {
-        const seed = buildSeed(Date.now(), -new Date().getTimezoneOffset());
-        await repo.put('users', seed.users);
-        await repo.put('settings', seed.settings);
-        await repo.put('cards', seed.cards);
-        await repo.put('subTasks', seed.subTasks);
-        await repo.put('events', seed.events);
-        await repo.put('flags', seed.flags);
-        await repo.put('catalystSessions', seed.catalystSessions);
-        loaded = await repo.load();
+      setStatus('loading');
+      setError(null);
+
+      if (repo.auth) {
+        const userId = await repo.auth.currentUserId();
+        if (cancelled) return;
+        if (!userId) {
+          setStatus('signed_out');
+          return;
+        }
       }
-      if (!cancelled) {
+
+      try {
+        let loaded = await repo.load();
+        if (loaded.users.length === 0 && repo.kind === 'local') {
+          const seed = buildSeed(Date.now(), -new Date().getTimezoneOffset());
+          await repo.put('users', seed.users);
+          await repo.put('settings', seed.settings);
+          await repo.put('cards', seed.cards);
+          await repo.put('subTasks', seed.subTasks);
+          await repo.put('events', seed.events);
+          await repo.put('flags', seed.flags);
+          await repo.put('catalystSessions', seed.catalystSessions);
+          loaded = await repo.load();
+        }
+        if (cancelled) return;
+        if (loaded.users.length === 0) {
+          // Signed in, but nothing came back: almost always the migration has not been applied,
+          // or this person has no members row. Say so rather than showing an empty board.
+          throw new Error(
+            'Signed in, but the team has no members. Apply supabase/migrations/0001_init.sql — the bootstrap trigger creates a member row on first sign-in.',
+          );
+        }
         setSnapshot(loaded);
-        setReady(true);
+        setStatus('ready');
+      } catch (cause) {
+        if (cancelled) return;
+        setError(cause instanceof Error ? cause.message : String(cause));
+        setStatus('error');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [repo]);
+  }, [repo, authUserId, attempt]);
 
   // Live updates from other tabs (local) or other clients (Supabase).
   useEffect(() => repo.subscribe(() => void reload()), [repo, reload]);
@@ -130,10 +199,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [snapshot.cards, snapshot.events, snapshot.users, settings, nowIso],
   );
 
-  const viewer = useMemo(
-    () => snapshot.users.find((u) => u.id === viewerId) ?? snapshot.users[0] ?? null,
-    [snapshot.users, viewerId],
-  );
+  const viewer = useMemo(() => {
+    if (repo.auth) {
+      // No switching identities on a real backend — you are who you signed in as.
+      return snapshot.users.find((u) => u.id === authUserId) ?? null;
+    }
+    return snapshot.users.find((u) => u.id === viewerId) ?? snapshot.users[0] ?? null;
+  }, [repo, snapshot.users, viewerId, authUserId]);
 
   // Persist flag transitions so history survives threshold changes (PRD §5.2).
   useEffect(() => {
@@ -201,8 +273,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     return {
       setViewer(userId) {
-        localStorage.setItem('mpp:viewer', userId);
+        writeStored('mpp:viewer', userId);
         setViewerId(userId);
+      },
+
+      async sendMagicLink(email) {
+        if (!repo.auth) throw new Error('This build has no sign-in.');
+        await repo.auth.sendMagicLink(email);
+      },
+
+      async signOut() {
+        await repo.auth?.signOut();
+      },
+
+      retry() {
+        setAttempt((n) => n + 1);
       },
 
       async createCard({ title, column, assigneeId, description }) {
@@ -439,6 +524,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value: StoreValue = {
     ready,
+    status,
+    error,
     backend: repo.kind,
     snapshot,
     now,

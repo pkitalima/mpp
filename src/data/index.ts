@@ -13,4 +13,9 @@ export function createRepository(): Repository {
   return new LocalRepository();
 }
 
+/** True when this build is pointed at a Supabase project rather than local storage. */
+export function isSupabaseConfigured(): boolean {
+  return Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+}
+
 export type { Repository };

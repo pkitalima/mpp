@@ -217,7 +217,12 @@ create policy flags_read on stagnation_flags for select using (
   )
 );
 
-create policy flags_write on stagnation_flags for all using (is_member()) with check (is_member());
+-- Deliberately NOT `for all`: permissive policies are OR'd together, so a `for all` write policy
+-- would also grant SELECT on every row and silently defeat flags_read above. Writes are split
+-- per command so the read rule is the only thing deciding what can be read.
+create policy flags_insert on stagnation_flags for insert with check (is_member());
+create policy flags_update on stagnation_flags for update using (is_member()) with check (is_member());
+create policy flags_delete on stagnation_flags for delete using (is_member());
 
 -- Aggregates stay with the lead at every visibility level — the setting changes attribution,
 -- not the existence of the signal. Security definer so a lead on "Owner only" still gets counts
@@ -235,6 +240,58 @@ $$;
 
 revoke all on function pulse_flag_counts(timestamptz) from public;
 grant execute on function pulse_flag_counts(timestamptz) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Bootstrap
+-- ---------------------------------------------------------------------------
+-- A person signing in for the first time has no row in public.users, and no policy here lets
+-- them create one — by design, since membership is not self-service. This trigger creates it,
+-- along with the team and its settings row on the very first sign-in.
+--
+-- The first person to sign in becomes the lead. For a single-team internal deployment (D3) that
+-- is the person who set the deployment up; anyone after them joins as a member, and the lead can
+-- change roles.
+create or replace function handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  target_team text;
+  member_count integer;
+begin
+  insert into teams (id, name) values ('team', 'The team') on conflict (id) do nothing;
+  select id into target_team from teams order by created_at limit 1;
+  insert into team_settings (team_id) values (target_team) on conflict (team_id) do nothing;
+
+  select count(*) into member_count from users;
+  insert into users (id, team_id, email, display_name, role)
+  values (
+    new.id,
+    target_team,
+    new.email,
+    coalesce(nullif(new.raw_user_meta_data ->> 'display_name', ''), split_part(new.email, '@', 1)),
+    case when member_count = 0 then 'lead' else 'member' end
+  )
+  on conflict (id) do nothing;
+  return new;
+end $$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function handle_new_user();
+
+-- ---------------------------------------------------------------------------
+-- Grants
+-- ---------------------------------------------------------------------------
+-- RLS decides which rows a request may touch; grants decide whether it may touch the table at
+-- all. A fresh Supabase project usually carries default privileges that cover this, but relying
+-- on project configuration means the schema is not self-contained — and on a plain Postgres it
+-- fails outright with "permission denied for table cards".
+--
+-- anon is granted nothing: every policy here requires a session, so an unauthenticated request
+-- should fail at the door rather than return a confusing empty result.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated;
 
 -- Realtime for the live board and presence.
 alter publication supabase_realtime add table cards, sub_tasks, activity_events,
