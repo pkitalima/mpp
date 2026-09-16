@@ -12,6 +12,23 @@ three mechanics layered on it:
 
 Full product rationale: **[docs/PRD.md](docs/PRD.md)**.
 
+## Open it in an IDE
+
+Any VS Code-based editor — VS Code, Cursor, Antigravity — opens this the same way:
+
+```bash
+git clone https://github.com/pkitalima/mpp.git
+cd mpp
+git checkout claude/stagnation-radar-prd-tech-f1il1y
+npm install
+npm run dev
+```
+
+Then open the `mpp` folder in the editor. **Node 22.12 or newer is required** (Vitest 5 sets the
+floor); `node -v` tells you what you have, and `.nvmrc` pins it for anyone using nvm. The editor
+will offer the two recommended extensions from `.vscode/extensions.json` — Tailwind IntelliSense
+matters here because Tailwind v4 keeps its configuration in `src/index.css` rather than a JS file.
+
 ## Quick start
 
 ```bash

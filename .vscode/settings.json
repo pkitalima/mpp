@@ -1,0 +1,14 @@
+{
+  // Tailwind v4 keeps its config in CSS, so the extension needs the file treated as Tailwind
+  // rather than plain CSS, and needs to complete class names inside JSX strings.
+  "files.associations": { "*.css": "tailwindcss" },
+  "editor.quickSuggestions": { "strings": "on" },
+  "css.validate": false,
+  // Use the TypeScript that ships with the project, not the editor's bundled copy.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "search.exclude": {
+    "**/dist": true,
+    "**/dist-demo": true,
+    "**/.smoke": true
+  }
+}
