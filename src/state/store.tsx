@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createRepository, type Repository } from '../data';
 import { emptySnapshot, newId, type Snapshot } from '../data/schema';
-import { buildSeed, DEMO_USER_ID, TEAM_ID } from '../data/local/seed';
+import { buildExampleBoard, buildSeed, DEMO_USER_ID, TEAM_ID } from '../data/local/seed';
 import { evaluateBoard, reconcileFlags } from '../domain/stagnation';
 import { resolveSettings, type ResolvedSettings } from '../domain/thresholds';
 import { currentBlockFor, isInDeepWork, shouldQueue } from '../domain/focus';
@@ -63,6 +63,7 @@ export interface Actions {
   startFocusBlock(scope: FocusScope, minutes: number): Promise<void>;
   endFocusBlock(blockId: string): Promise<void>;
   dismissNotification(id: string): Promise<void>;
+  loadExampleBoard(): Promise<void>;
   resetDemoData(): Promise<void>;
 }
 
@@ -499,6 +500,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       async dismissNotification(id) {
         await repo.remove('notifications', [id]);
+        await reload();
+      },
+
+      /**
+       * Fills an empty board with the example work, assigned across whoever is actually on the
+       * team. A fresh deployment is otherwise five empty columns, which says nothing about
+       * whether the radar suits the team's pace.
+       */
+      async loadExampleBoard() {
+        const teamId = snapshot.users[0]?.teamId ?? TEAM_ID;
+        const board = buildExampleBoard(teamId, snapshot.users, Date.now());
+        await repo.put('cards', board.cards);
+        await repo.put('subTasks', board.subTasks);
+        await repo.put('events', board.events);
+        await repo.put('flags', board.flags);
+        await repo.put('catalystSessions', board.catalystSessions);
         await reload();
       },
 

@@ -18,6 +18,7 @@ function thresholdLabel(column: EvaluatedColumn): string {
 
 export function SettingsView() {
   const { viewer, rawSettings, settings, actions, backend, now, snapshot } = useStore();
+  const [loadingExample, setLoadingExample] = useState(false);
   const [draft, setDraft] = useState(() => settings.thresholds);
   const [error, setError] = useState<string | null>(null);
 
@@ -187,13 +188,38 @@ export function SettingsView() {
               : 'never — running on system defaults'}
           </Row>
         </dl>
-        {backend === 'local' && (
-          <button
-            onClick={() => void actions.resetDemoData()}
-            className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            Reset demo data
-          </button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {backend === 'local' && (
+            <button
+              onClick={() => void actions.resetDemoData()}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Reset demo data
+            </button>
+          )}
+          {isLead && snapshot.cards.length === 0 && (
+            <button
+              disabled={loadingExample}
+              onClick={async () => {
+                setLoadingExample(true);
+                try {
+                  await actions.loadExampleBoard();
+                } finally {
+                  setLoadingExample(false);
+                }
+              }}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {loadingExample ? 'Loading…' : 'Load example board'}
+            </button>
+          )}
+        </div>
+        {isLead && snapshot.cards.length === 0 && (
+          <p className="mt-1.5 text-xs text-slate-500">
+            Puts a fortnight of example work on the board, spread across everyone who has signed in
+            so far — including one card that is already stalled, so there is something for the radar
+            to catch. Delete the cards when you are done evaluating.
+          </p>
         )}
       </section>
     </div>

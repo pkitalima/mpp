@@ -32,14 +32,24 @@ also the fastest way to see what each flag-visibility level actually hides.
 | `npm run typecheck` | Types only |
 | `npm run smoke` | End-to-end browser walkthrough against a running `npm run preview` |
 | `npm run db:test` | Applies the migration to a throwaway Postgres and runs the RLS policy tests |
+| `npm run supabase:check` | Tells you whether a Supabase project is set up correctly, and what is missing |
 
 ## Running against Supabase (multi-person)
 
-1. Create a Supabase project.
-2. Run `supabase/migrations/0001_init.sql` in the SQL editor (or
+1. Create a Supabase project at supabase.com (the free tier is ample for one team).
+2. Run `supabase/migrations/0001_init.sql` in the project's SQL editor (or
    `psql "$DATABASE_URL" -f supabase/migrations/0001_init.sql`).
-3. `cp .env.example .env.local` and fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
-4. `npm run dev`, then sign in with a magic link.
+3. `cp .env.example .env.local`, then fill in **Project URL** and the **anon public** key from
+   Settings → API. The anon key is public by design — it ships inside the browser bundle, and RLS
+   is what protects the data. The `service_role` key must never go in this file.
+4. `npm run supabase:check` — it verifies the project is reachable, the schema is applied, RLS
+   actually hides data from an unauthenticated request, and email sign-in is enabled.
+5. `npm run dev`, then sign in with a magic link. The first person to sign in becomes the lead, and
+   can put example work on the board from Settings → Load example board.
+
+Magic links come back to wherever the app is served from, so add that origin under
+Authentication → URL Configuration (`http://localhost:5173` for local development, plus your
+deployed URL).
 
 **The first person to sign in becomes the team lead** and can set thresholds and flag visibility;
 everyone after that joins as a member. A bootstrap trigger on `auth.users` creates the member row,

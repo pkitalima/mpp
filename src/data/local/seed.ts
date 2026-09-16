@@ -129,6 +129,138 @@ const SUB_TASKS: [cardId: string, title: string, minutes: number, done: boolean]
   ['c_newsletter', 'Draft the subject line options', 5, false],
 ];
 
+/** The cards, steps, history and flags of the example board, with no users or settings. */
+export interface ExampleBoard {
+  cards: Card[];
+  subTasks: SubTask[];
+  events: ActivityEvent[];
+  flags: StagnationFlag[];
+  catalystSessions: CatalystSession[];
+}
+
+/**
+ * Builds the example board against whichever people are actually on the team.
+ *
+ * The local demo runs it over the fictional eight; a real Supabase team runs it over its own
+ * members, so a fresh deployment can be evaluated on a board that already has a stalled card and
+ * four weeks of history rather than on five empty columns.
+ */
+export function buildExampleBoard(
+  teamId: string,
+  members: { id: string }[],
+  now: number = Date.now(),
+): ExampleBoard {
+  // The seed names its people by the demo ids; map each onto a real member, round-robin, so a
+  // team of three gets the same board with the work spread across the three of them.
+  const assign = (demoId: string | null): string | null => {
+    if (demoId === null) return null;
+    if (members.length === 0) return null;
+    const index = PEOPLE.findIndex(([id]) => id === demoId);
+    return members[(index < 0 ? 0 : index) % members.length]!.id;
+  };
+
+  const events: ActivityEvent[] = [];
+  const pushEvent = (
+    cardId: string,
+    kind: ActivityKind,
+    createdAt: string,
+    extra: Partial<ActivityEvent> = {},
+  ) => {
+    events.push({
+      id: `ev_${cardId}_${kind}_${events.length}`,
+      cardId,
+      userId: extra.userId ?? null,
+      kind,
+      resetsClock: CLOCK_RESETTING_KINDS.has(kind),
+      createdAt,
+      ...extra,
+    });
+  };
+
+  const cards = CARDS.map((seed, index): Card => {
+    const assignee = assign(seed.assigneeId);
+    const lastMovement = businessDaysAgo(now, seed.staleDays);
+    const created = businessDaysAgo(now, seed.staleDays + 3 + (index % 5));
+    const createdInColumn = seed.createdInColumn ?? (seed.column === 'backlog' ? 'backlog' : 'todo');
+
+    pushEvent(seed.id, 'created', created, { toColumn: createdInColumn, userId: assignee });
+    if (seed.column !== createdInColumn) {
+      pushEvent(seed.id, 'column_changed', lastMovement, {
+        toColumn: seed.column,
+        userId: assignee,
+        detail: seed.column,
+      });
+    } else {
+      pushEvent(seed.id, 'comment_added', lastMovement, {
+        userId: assignee,
+        detail: 'Picked this back up.',
+      });
+    }
+    if (seed.blockedReason) {
+      pushEvent(seed.id, 'blocked_reason_set', businessDaysAgo(now, Math.max(0, seed.staleDays - 0.1)), {
+        userId: assignee,
+        detail: seed.blockedReason,
+      });
+    }
+    // Someone opening a card must not reset its clock — seed a few so that is visible.
+    if (index % 3 === 0) pushEvent(seed.id, 'viewed', hoursAgo(now, 2), { userId: assign(DEMO_USER_ID) });
+
+    return {
+      id: seed.id,
+      teamId,
+      title: seed.title,
+      description: seed.description ?? '',
+      column: seed.column,
+      assigneeId: assignee,
+      blockedReason: seed.blockedReason ?? null,
+      dueDate: null,
+      createdAt: created,
+      completedAt: seed.completedDaysAgo ? businessDaysAgo(now, seed.completedDaysAgo) : null,
+      position: index,
+    };
+  });
+
+  const subTasks = SUB_TASKS.map(([cardId, title, estMinutes, done], index): SubTask => ({
+    id: `st_${cardId}_${index}`,
+    cardId,
+    title,
+    estMinutes,
+    completedAt: done ? businessDaysAgo(now, 1) : null,
+    position: index,
+  }));
+
+  // Historical flags: enough of a trail that the Pulse trend is readable on first open.
+  const history: [cardId: string, level: 'amber' | 'red', raised: number, cleared: number | null][] = [
+    ['c_done_4', 'amber', 9, 7],
+    ['c_done_5', 'red', 13, 9],
+    ['c_done_6', 'amber', 14, 12],
+    ['c_done_7', 'red', 21, 16],
+    ['c_done_3', 'amber', 6, 4],
+    ['c_case_study', 'amber', 3, 1.1],
+  ];
+  const flags = history.map(([cardId, level, raised, cleared], index): StagnationFlag => ({
+    id: `fl_hist_${index}`,
+    cardId,
+    level,
+    raisedAt: businessDaysAgo(now, raised),
+    clearedAt: cleared === null ? null : businessDaysAgo(now, cleared),
+    thresholdSnapshot:
+      level === 'red'
+        ? { column: 'in_progress', amberDays: 2, redDays: 4 }
+        : { column: 'todo', amberDays: 3, redDays: 5 },
+  }));
+
+  const catalystSessions = [
+    session('cs_1', 'c_newsletter', 'st_c_newsletter_4', assign('u_priya'), hoursAgo(now, 26), true),
+    session('cs_2', 'c_case_study', 'st_none', assign('u_nadia'), hoursAgo(now, 50), true),
+    session('cs_3', 'c_paid_social', 'st_none', assign('u_tom'), hoursAgo(now, 74), false),
+    session('cs_4', 'c_webinar', 'st_none', assign('u_elena'), hoursAgo(now, 96), true),
+    session('cs_5', 'c_seo_brief', 'st_none', assign('u_priya'), hoursAgo(now, 120), false),
+  ].filter((s): s is CatalystSession => s !== null);
+
+  return { cards, subTasks, events, flags, catalystSessions };
+}
+
 export function buildSeed(now: number = Date.now(), tzOffsetMinutes = 0): Snapshot {
   const snapshot = emptySnapshot();
 
@@ -156,105 +288,12 @@ export function buildSeed(now: number = Date.now(), tzOffsetMinutes = 0): Snapsh
   };
   snapshot.settings = [settings];
 
-  const events: ActivityEvent[] = [];
-  const pushEvent = (
-    cardId: string,
-    kind: ActivityKind,
-    createdAt: string,
-    extra: Partial<ActivityEvent> = {},
-  ) => {
-    events.push({
-      id: `ev_${cardId}_${kind}_${events.length}`,
-      cardId,
-      userId: extra.userId ?? null,
-      kind,
-      resetsClock: CLOCK_RESETTING_KINDS.has(kind),
-      createdAt,
-      ...extra,
-    });
-  };
-
-  snapshot.cards = CARDS.map((seed, index): Card => {
-    const lastMovement = businessDaysAgo(now, seed.staleDays);
-    const created = businessDaysAgo(now, seed.staleDays + 3 + (index % 5));
-    const createdInColumn = seed.createdInColumn ?? (seed.column === 'backlog' ? 'backlog' : 'todo');
-
-    pushEvent(seed.id, 'created', created, { toColumn: createdInColumn, userId: seed.assigneeId });
-    if (seed.column !== createdInColumn) {
-      pushEvent(seed.id, 'column_changed', lastMovement, {
-        toColumn: seed.column,
-        userId: seed.assigneeId,
-        detail: seed.column,
-      });
-    } else {
-      pushEvent(seed.id, 'comment_added', lastMovement, {
-        userId: seed.assigneeId,
-        detail: 'Picked this back up.',
-      });
-    }
-    if (seed.blockedReason) {
-      pushEvent(seed.id, 'blocked_reason_set', businessDaysAgo(now, Math.max(0, seed.staleDays - 0.1)), {
-        userId: seed.assigneeId,
-        detail: seed.blockedReason,
-      });
-    }
-    // Someone opening a card must not reset its clock — seed a few so that is visible.
-    if (index % 3 === 0) pushEvent(seed.id, 'viewed', hoursAgo(now, 2), { userId: DEMO_USER_ID });
-
-    return {
-      id: seed.id,
-      teamId: TEAM_ID,
-      title: seed.title,
-      description: seed.description ?? '',
-      column: seed.column,
-      assigneeId: seed.assigneeId,
-      blockedReason: seed.blockedReason ?? null,
-      dueDate: null,
-      createdAt: created,
-      completedAt: seed.completedDaysAgo ? businessDaysAgo(now, seed.completedDaysAgo) : null,
-      position: index,
-    };
-  });
-
-  snapshot.subTasks = SUB_TASKS.map(([cardId, title, estMinutes, done], index): SubTask => ({
-    id: `st_${cardId}_${index}`,
-    cardId,
-    title,
-    estMinutes,
-    completedAt: done ? businessDaysAgo(now, 1) : null,
-    position: index,
-  }));
-
-  snapshot.events = events;
-
-  // Historical flags: enough of a trail that the Pulse trend is readable on first open.
-  const history: [cardId: string, level: 'amber' | 'red', raised: number, cleared: number | null][] = [
-    ['c_done_4', 'amber', 9, 7],
-    ['c_done_5', 'red', 13, 9],
-    ['c_done_6', 'amber', 14, 12],
-    ['c_done_7', 'red', 21, 16],
-    ['c_done_3', 'amber', 6, 4],
-    ['c_case_study', 'amber', 3, 1.1],
-  ];
-  snapshot.flags = history.map(([cardId, level, raised, cleared], index): StagnationFlag => ({
-    id: `fl_hist_${index}`,
-    cardId,
-    level,
-    raisedAt: businessDaysAgo(now, raised),
-    clearedAt: cleared === null ? null : businessDaysAgo(now, cleared),
-    thresholdSnapshot:
-      level === 'red'
-        ? { column: 'in_progress', amberDays: 2, redDays: 4 }
-        : { column: 'todo', amberDays: 3, redDays: 5 },
-  }));
-
-  snapshot.catalystSessions = [
-    session('cs_1', 'c_newsletter', 'st_c_newsletter_4', 'u_priya', hoursAgo(now, 26), true),
-    session('cs_2', 'c_case_study', 'st_none', 'u_nadia', hoursAgo(now, 50), true),
-    session('cs_3', 'c_paid_social', 'st_none', 'u_tom', hoursAgo(now, 74), false),
-    session('cs_4', 'c_webinar', 'st_none', 'u_elena', hoursAgo(now, 96), true),
-    session('cs_5', 'c_seo_brief', 'st_none', 'u_priya', hoursAgo(now, 120), false),
-  ];
+  const board = buildExampleBoard(TEAM_ID, snapshot.users, now);
+  snapshot.cards = board.cards;
+  snapshot.subTasks = board.subTasks;
+  snapshot.events = board.events;
+  snapshot.flags = board.flags;
+  snapshot.catalystSessions = board.catalystSessions;
 
   return snapshot;
 }
@@ -263,10 +302,11 @@ function session(
   id: string,
   cardId: string,
   subTaskId: string,
-  userId: string,
+  userId: string | null,
   startedAt: string,
   continued: boolean,
-): CatalystSession {
+): CatalystSession | null {
+  if (userId === null) return null;
   return {
     id,
     cardId,

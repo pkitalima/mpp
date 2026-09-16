@@ -12,7 +12,8 @@
     "smoke": "node scripts/smoke.mjs",
     "check": "tsc --noEmit && vitest run",
     "typecheck": "tsc --noEmit",
-    "db:test": "bash scripts/db-test.sh"
+    "db:test": "bash scripts/db-test.sh",
+    "supabase:check": "node scripts/supabase-preflight.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
