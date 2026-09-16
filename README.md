@@ -19,10 +19,12 @@ Any VS Code-based editor — VS Code, Cursor, Antigravity — opens this the sam
 ```bash
 git clone https://github.com/pkitalima/mpp.git
 cd mpp
-git checkout claude/stagnation-radar-prd-tech-f1il1y
 npm install
 npm run dev
 ```
+
+The work lives on `claude/stagnation-radar-prd-tech-f1il1y`, which is the repository's default
+branch, so a plain clone already puts you on it.
 
 Then open the `mpp` folder in the editor. **Node 22.12 or newer is required** (Vitest 5 sets the
 floor); `node -v` tells you what you have, and `.nvmrc` pins it for anyone using nvm. The editor
